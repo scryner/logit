@@ -22,10 +22,11 @@ const (
 const LOG_QUEUE = 1024
 
 // global variable
-var actor_in chan *logToken
-
-var default_w io.Writer
-var default_log_level LogLevel
+var (
+	actor_in          chan *logToken
+	default_w         io.Writer
+	default_log_level LogLevel
+)
 
 func init() {
 	actor_in = make(chan *logToken, LOG_QUEUE) // when queue is full with queue size, caller would to wait sometime
@@ -50,7 +51,7 @@ type logToken struct {
 
 func startLoggerActor() {
 	ready := make(chan bool)
-	replacer := strings.NewReplacer("\n", "\n\t\t")
+	replacer := strings.NewReplacer("\n", "\n             ")
 
 	go func(actor_in chan *logToken) {
 		ready <- true
@@ -108,7 +109,12 @@ func NewLogger(prefix string, w io.Writer, allowedLogLevel LogLevel) *Logger {
 	logger.level = allowedLogLevel
 	logger.prefix = prefix
 
-	newprefix := fmt.Sprintf("[%-10s] ", prefix)
+	var newprefix string
+	if prefix == "" {
+		newprefix = ""
+	} else {
+		newprefix = fmt.Sprintf("[%-10s] ", prefix)
+	}
 
 	logger.l = golog.New(w, newprefix, golog.Ldate|golog.Lmicroseconds)
 

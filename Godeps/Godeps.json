@@ -1,10 +1,10 @@
 {
 	"ImportPath": "logit",
-	"GoVersion": "go1.4.1",
+	"GoVersion": "go1.4.2",
 	"Deps": [
 		{
 			"ImportPath": "github.com/scryner/logg",
-			"Rev": "efb988bf44301b14c3d4c3d01f4b0e2c9cbb30b3"
+			"Rev": "8b6b1c522f5694d89b6c1b6247df440a94d908df"
 		}
 	]
 }

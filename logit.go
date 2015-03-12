@@ -44,9 +44,11 @@ func safelyDo(fun func()) (err error) {
 
 func makeHandler(logFilePath string) (http.HandlerFunc, error) {
 	var dw io.Writer
+	var dwPrefix string
 
 	if logFilePath == "" {
 		dw = os.Stdout
+		dwPrefix = "logit"
 
 	} else {
 		f, err := os.OpenFile(fmt.Sprintf("%s/logit.log", logFilePath), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
@@ -55,10 +57,12 @@ func makeHandler(logFilePath string) (http.HandlerFunc, error) {
 		}
 
 		dw = f
+		dwPrefix = ""
+
 		fds = append(fds, f)
 	}
 
-	logger := logg.NewLogger("logit", dw, logg.LOG_LEVEL_DEBUG)
+	logger := logg.NewLogger(dwPrefix, dw, logg.LOG_LEVEL_DEBUG)
 
 	return func(rw http.ResponseWriter, req *http.Request) {
 		defer func() {
@@ -110,22 +114,26 @@ func makeHandler(logFilePath string) (http.HandlerFunc, error) {
 		if senderLogger == nil {
 			// create new logger
 			var w io.Writer
+			var prefix string
 
 			if logFilePath == "" {
 				w = os.Stdout
+				prefix = lowerSender
 
 			} else {
 				f, err := os.OpenFile(fmt.Sprintf("%s/%s.log", logFilePath, lowerSender), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 				if err != nil {
 					w = os.Stdout
+					prefix = lowerSender
 				} else {
 					w = f
+					prefix = ""
 
 					fds = append(fds, f)
 				}
 			}
 
-			senderLogger = logg.NewLogger(lowerSender, w, logg.LOG_LEVEL_DEBUG)
+			senderLogger = logg.NewLogger(prefix, w, logg.LOG_LEVEL_DEBUG)
 
 			lock.Lock()
 			loggers[lowerSender] = senderLogger
