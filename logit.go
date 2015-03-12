@@ -89,7 +89,10 @@ func makeHandler(w io.Writer) http.HandlerFunc {
 		if senderLogger == nil {
 			// create new logger
 			senderLogger = logg.NewLogger(lowerSender, w, logg.LOG_LEVEL_DEBUG)
+
+			lock.Lock()
 			loggers[lowerSender] = senderLogger
+			lock.Unlock()
 		}
 
 		// log it
