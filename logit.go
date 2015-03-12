@@ -45,6 +45,11 @@ func makeHandler(w io.Writer) http.HandlerFunc {
 	logger := logg.NewLogger("logit", w, logg.LOG_LEVEL_DEBUG)
 
 	return func(rw http.ResponseWriter, req *http.Request) {
+		defer func() {
+			// just return blank content
+			fmt.Fprintf(rw, "")
+		}()
+
 		// read body
 		b, err := ioutil.ReadAll(req.Body)
 		if err != nil {
@@ -115,6 +120,7 @@ func makeHandler(w io.Writer) http.HandlerFunc {
 		default:
 			senderLogger.Debugf("%s", content)
 		}
+
 	}
 }
 
