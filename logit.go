@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -20,9 +21,9 @@ var (
 
 	// global variable
 	lock *sync.Mutex
-	w    io.Writer
 
 	loggers map[string]*logg.Logger
+	fds     []io.Closer
 )
 
 func init() {
@@ -41,8 +42,23 @@ func safelyDo(fun func()) (err error) {
 	return
 }
 
-func makeHandler(w io.Writer) http.HandlerFunc {
-	logger := logg.NewLogger("logit", w, logg.LOG_LEVEL_DEBUG)
+func makeHandler(logFilePath string) (http.HandlerFunc, error) {
+	var dw io.Writer
+
+	if logFilePath == "" {
+		dw = os.Stdout
+
+	} else {
+		f, err := os.OpenFile(fmt.Sprintf("%s/logit.log", logFilePath), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("can't open default log file: %v", err)
+		}
+
+		dw = f
+		fds = append(fds, f)
+	}
+
+	logger := logg.NewLogger("logit", dw, logg.LOG_LEVEL_DEBUG)
 
 	return func(rw http.ResponseWriter, req *http.Request) {
 		defer func() {
@@ -93,6 +109,22 @@ func makeHandler(w io.Writer) http.HandlerFunc {
 		senderLogger := loggers[lowerSender]
 		if senderLogger == nil {
 			// create new logger
+			var w io.Writer
+
+			if logFilePath == "" {
+				w = os.Stdout
+
+			} else {
+				f, err := os.OpenFile(fmt.Sprintf("%s/%s.log", logFilePath, lowerSender), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+				if err != nil {
+					w = os.Stdout
+				} else {
+					w = f
+
+					fds = append(fds, f)
+				}
+			}
+
 			senderLogger = logg.NewLogger(lowerSender, w, logg.LOG_LEVEL_DEBUG)
 
 			lock.Lock()
@@ -120,8 +152,7 @@ func makeHandler(w io.Writer) http.HandlerFunc {
 		default:
 			senderLogger.Debugf("%s", content)
 		}
-
-	}
+	}, nil
 }
 
 func main() {
@@ -131,7 +162,6 @@ func main() {
 	lock = &sync.Mutex{}
 	loggers = make(map[string]*logg.Logger)
 
-	var f *os.File = nil
 	var err error
 
 	// sig handler
@@ -142,7 +172,7 @@ func main() {
 		for _ = range c {
 			logg.Flush()
 
-			if f != nil {
+			for _, f := range fds {
 				f.Close()
 			}
 
@@ -150,24 +180,32 @@ func main() {
 		}
 	}()
 
-	defer func() {
-		logg.Flush()
-		os.Exit(0)
-	}()
-
-	if logFilePath == "" {
-		w = os.Stdout
-	} else {
-		f, err = os.OpenFile(logFilePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if logFilePath != "" {
+		finfo, err := os.Stat(logFilePath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "can't open log file '%s'\n", logFilePath)
+			fmt.Fprintf(os.Stderr, "log file path stat failed: %v", err)
 			os.Exit(1)
 		}
 
-		w = f
+		if !finfo.IsDir() {
+			fmt.Fprintf(os.Stderr, "log file path must be directory")
+			os.Exit(1)
+		}
+
+		logFilePath, err = filepath.Abs(logFilePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "log file path converting failed: %v", err)
+			os.Exit(1)
+		}
 	}
 
-	http.HandleFunc("/", makeHandler(w))
+	handler, err := makeHandler(logFilePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "log file handler initialization failed: %v", err)
+		os.Exit(1)
+	}
+
+	http.HandleFunc("/", handler)
 
 	fmt.Printf("logit server starting at port '%d'\n", listenPort)
 	http.ListenAndServe(fmt.Sprintf(":%d", listenPort), nil)
