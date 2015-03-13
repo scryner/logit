@@ -193,8 +193,8 @@ func (logger *Logger) Fatalf(format string, v ...interface{}) {
 	newformat := setMessagePrefix(format, LOG_LEVEL_FATAL)
 	logger._printf(LOG_LEVEL_FATAL, true, newformat, v...)
 
-	s := fmt.Sprintf(format, v...)
-	panic(s)
+	//s := fmt.Sprintf(format, v...)
+	//panic(s)
 }
 
 func setMessagePrefix(format string, level LogLevel) string {

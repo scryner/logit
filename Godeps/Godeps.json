@@ -4,7 +4,7 @@
 	"Deps": [
 		{
 			"ImportPath": "github.com/scryner/logg",
-			"Rev": "8b6b1c522f5694d89b6c1b6247df440a94d908df"
+			"Rev": "1d4d1b55d9b2a4ea4f62d8911c4ed4045091b14b"
 		}
 	]
 }
