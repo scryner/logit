@@ -19,6 +19,10 @@ var (
 	listenPort  int
 	logFilePath string
 
+	enableGz   bool
+	maxSizeStr string
+	maxSize    int64
+
 	// global variable
 	lock *sync.Mutex
 
@@ -29,6 +33,8 @@ var (
 func init() {
 	flag.IntVar(&listenPort, "p", 8070, "listen port")
 	flag.StringVar(&logFilePath, "w", "", "log file path")
+	flag.StringVar(&maxSizeStr, "s", "16m", "max size (-1 means no log rotation)")
+	flag.BoolVar(&enableGz, "z", true, "enable gz")
 }
 
 func safelyDo(fun func()) (err error) {
@@ -43,26 +49,21 @@ func safelyDo(fun func()) (err error) {
 }
 
 func makeHandler(logFilePath string) (http.HandlerFunc, error) {
-	var dw io.Writer
-	var dwPrefix string
+	var logger *logg.Logger
 
 	if logFilePath == "" {
-		dw = os.Stdout
-		dwPrefix = "logit"
+		logger = logg.NewLogger("logit", os.Stdout, logg.LOG_LEVEL_DEBUG)
 
 	} else {
-		f, err := os.OpenFile(fmt.Sprintf("%s/logit.log", logFilePath), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		var err error
+
+		logger, err = logg.NewFileLogger("", fmt.Sprintf("%s/logit.log", logFilePath), logg.LOG_LEVEL_DEBUG, maxSize, enableGz)
 		if err != nil {
 			return nil, fmt.Errorf("can't open default log file: %v", err)
 		}
 
-		dw = f
-		dwPrefix = ""
-
-		fds = append(fds, f)
+		fds = append(fds, logger.GetCloser())
 	}
-
-	logger := logg.NewLogger(dwPrefix, dw, logg.LOG_LEVEL_DEBUG)
 
 	return func(rw http.ResponseWriter, req *http.Request) {
 		defer func() {
@@ -113,27 +114,17 @@ func makeHandler(logFilePath string) (http.HandlerFunc, error) {
 		senderLogger := loggers[lowerSender]
 		if senderLogger == nil {
 			// create new logger
-			var w io.Writer
-			var prefix string
-
 			if logFilePath == "" {
-				w = os.Stdout
-				prefix = lowerSender
+				senderLogger = logg.NewLogger(lowerSender, os.Stdout, logg.LOG_LEVEL_DEBUG)
 
 			} else {
-				f, err := os.OpenFile(fmt.Sprintf("%s/%s.log", logFilePath, lowerSender), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+				senderLogger, err = logg.NewFileLogger("", fmt.Sprintf("%s/%s.log", logFilePath, lowerSender), logg.LOG_LEVEL_DEBUG, maxSize, enableGz)
 				if err != nil {
-					w = os.Stdout
-					prefix = lowerSender
+					senderLogger = logg.NewLogger(lowerSender, os.Stdout, logg.LOG_LEVEL_DEBUG)
 				} else {
-					w = f
-					prefix = ""
-
-					fds = append(fds, f)
+					fds = append(fds, senderLogger.GetCloser())
 				}
 			}
-
-			senderLogger = logg.NewLogger(prefix, w, logg.LOG_LEVEL_DEBUG)
 
 			lock.Lock()
 			loggers[lowerSender] = senderLogger
@@ -166,6 +157,21 @@ func makeHandler(logFilePath string) (http.HandlerFunc, error) {
 func main() {
 	flag.Parse()
 
+	var suffix string
+
+	fmt.Sscanf(maxSizeStr, "%d%s", &maxSize, &suffix)
+
+	switch suffix {
+	case "k", "K":
+		maxSize *= 1024
+
+	case "m", "M":
+		maxSize *= 1024 * 1024
+
+	case "g", "G":
+		maxSize *= 1024 * 1024 * 1024
+	}
+
 	// initialize global variables
 	lock = &sync.Mutex{}
 	loggers = make(map[string]*logg.Logger)
@@ -191,7 +197,7 @@ func main() {
 	if logFilePath != "" {
 		finfo, err := os.Stat(logFilePath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "log file path stat failed: %v", err)
+			fmt.Fprintf(os.Stderr, "log file path stat failed: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -202,19 +208,26 @@ func main() {
 
 		logFilePath, err = filepath.Abs(logFilePath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "log file path converting failed: %v", err)
+			fmt.Fprintf(os.Stderr, "log file path converting failed: %v\n", err)
 			os.Exit(1)
 		}
 	}
 
 	handler, err := makeHandler(logFilePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "log file handler initialization failed: %v", err)
+		fmt.Fprintf(os.Stderr, "log file handler initialization failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	http.HandleFunc("/", handler)
 
 	fmt.Printf("logit server starting at port '%d'\n", listenPort)
+
+	if logFilePath != "" {
+		fmt.Printf("log file path: %s\n", logFilePath)
+		fmt.Printf("log file max size: %d\n", maxSize)
+		fmt.Printf("enable gzip: %v\n", enableGz)
+	}
+
 	http.ListenAndServe(fmt.Sprintf(":%d", listenPort), nil)
 }
